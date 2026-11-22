@@ -12,9 +12,15 @@ Otros comandos:
 
 ```
 python3 demo.py              # prueba rápida de R1 a R10 en la terminal
-python3 correr_tests.py      # 14 pruebas, no necesita instalar nada
+python3 correr_tests.py      # 15 pruebas, no necesita instalar nada
 python3 panel/medir.py       # mide todo en redes de 10.000 a 80.000 estaciones (R11)
 ```
+
+## App desplegada
+
+https://transmilleno7.lovable.app/
+
+Es una versión web del front. No reimplementa nada: carga Python en el navegador con Pyodide, descarga `motor/` y los CSV de la rama `main` de este repositorio y llama a los mismos métodos del contrato (`from motor import Red, simular_fila`). La primera carga tarda unos segundos mientras baja Pyodide.
 
 ## Estructura del repositorio
 
@@ -31,8 +37,8 @@ motor/
   ordenar.py      merge sort y búsqueda binaria
 app/app.py        front en Streamlit, incluye el panel de rendimiento
 panel/            generador de redes sintéticas y script de medición
-datos/            estaciones.csv, rutas.csv, horarios.csv
-conversion/       script que convierte el GTFS a los tres CSV
+datos/            estaciones.csv, rutas.csv, horarios.csv (lo único que lee el motor)
+conversion/       scripts que convierten el GTFS a los tres CSV (y coordenadas para el mapa)
 tests/            pruebas
 ```
 
@@ -41,6 +47,17 @@ tests/            pruebas
 `Red(carpeta)` lee los tres CSV una sola vez. Cada estación entra a una tabla hash, las paradas de cada ruta se ordenan por la columna `orden` y se arma una lista doblemente enlazada por ruta, y los horarios se agrupan por la pareja ruta|estación y se ordenan. Con eso se arman los dos árboles (estaciones abiertas y ranking) desde listas ya ordenadas, tomando el elemento del medio como raíz. Costo: O(n log n) por los ordenamientos, con n = filas de los CSV.
 
 Las horas se guardan como minutos desde las 00:00 (un entero) y se pasan a texto HH:MM solo al devolverlas. Comparar enteros es más simple y más rápido que comparar textos.
+
+## Datos y conversión del GTFS
+
+`conversion/convertir_gtfs.py` toma el GTFS de julio de 2021 y escribe los tres CSV de `datos/`. Lo que decidimos al convertir:
+
+- **Horas después de medianoche (25:10).** El GTFS cuenta los viajes que pasan de las 12 de la noche como 24:xx, 25:xx, etc., porque pertenecen al día de servicio anterior. Les restamos 24 (25:10 queda 01:10) para que todas las horas estén en HH:MM de 00:00 a 23:59, que es el formato que pide el enunciado. La consecuencia es que esos buses de madrugada aparecen al principio del día: `proximo_bus(..., "00:30")` puede devolver 01:10. Lo preferimos a descartarlos, porque así no se pierde ningún bus del conteo de R6. La otra opción era dejar 25:10 tal cual, pero rompe el formato HH:MM.
+- **Nombres.** En mayúsculas, sin tildes y sin espacios de más. Los vagones de una misma estación quedan como una sola estación.
+- **Rutas.** Cada secuencia distinta de paradas de un `route_short_name` es una ruta de un solo sentido, llamada `<nombre>-<número>`.
+- **Horarios repetidos.** Si dos viajes de la misma ruta pasan por la misma estación en el mismo minuto, la fila se guarda una sola vez (`drop_duplicates`). Así, los buses por día de R6 cuentan horarios distintos.
+
+`conversion/coordenadas.py` saca la latitud y longitud de cada estación del mismo GTFS y escribe `datos/coordenadas.csv`. **El motor no lee ese archivo**: solo lo usa el mapa del front.
 
 ## Decisiones por requisito (R12)
 
@@ -153,9 +170,23 @@ O grande: O(P log P), con P = número de pasajeros. Ordenar es O(P log P) y la s
 
 Alternativas descartadas: inserción es O(P²) con datos al azar, y aquí son cientos de miles de pasajeros. Una cola hecha con `list.pop(0)` hace la simulación O(P²).
 
+## Métodos extra para los fronts (fuera del contrato)
+
+Además del contrato, `Red` tiene tres métodos de apoyo para que las apps no lean atributos internos del motor ni repitan lógica. No hacen parte de R1 a R10 y siguen las mismas reglas de `motor/`:
+
+| Método | Devuelve | O grande |
+| --- | --- | --- |
+| `lista_rutas()` | todas las rutas en orden alfabético | O(R log R), R = rutas |
+| `rutas_de(estacion)` | las rutas que paran en esa estación, en orden ([] si no existe) | O(r log r), r = rutas de la estación |
+| `llegadas(ruta, hora)` | `(estacion, próximo bus o None)` para cada parada de la ruta, en orden | O(L log m), L = paradas, m = buses por parada |
+
+`llegadas` es `proximo_bus` aplicado a todo el recorrido. El mapa la usa para ubicar los buses: si el próximo bus llega antes a una parada que a la anterior, hay un bus entre esas dos paradas.
+
 ## Panel de rendimiento (R11)
 
-`panel/medir.py` genera redes de 10.000, 20.000, 40.000 y 80.000 estaciones con el mismo formato de los CSV (`panel/generar_red.py`), corre cada operación con las mismas consultas, toma la mediana de varias repeticiones y calcula la pendiente del tiempo contra n en escala logarítmica (0 = constante, 1 = lineal). El resultado queda en `panel/resultados.csv` y la pestaña "Panel de rendimiento" de la app lo grafica junto a la complejidad esperada.
+`panel/medir.py` genera redes de 10.000, 20.000, 40.000 y 80.000 estaciones con el mismo formato de los CSV (`panel/generar_red.py`), corre cada operación con las mismas consultas, toma la mediana de varias repeticiones y calcula la pendiente del tiempo contra n en escala logarítmica (0 = constante, 1 = lineal). El resultado queda en `panel/resultados.csv`. La pestaña "Panel de rendimiento" de la app lo grafica: la línea continua es lo medido y la punteada la complejidad que esperábamos, anclada en el primer tamaño.
+
+La misma pestaña tiene el botón **Medir ahora**, que corre todas las operaciones en vivo sobre redes de 1.000, 2.000, 4.000 y 8.000 estaciones (unos segundos) y muestra las pendientes con el mismo método. Sirve para comprobar la tendencia sin esperar la medición completa.
 
 Resultado (tiempo por operación):
 
@@ -179,4 +210,4 @@ Cómo se lee: las consultas (R1, R2, R3, R4, R6) quedan planas al pasar de 10.00
 
 ## Pruebas
 
-`python3 correr_tests.py` corre 14 pruebas: casos borde de cada requisito (estación inexistente o cerrada, viaje imposible, deshacer sin nada que deshacer, k = 0, rango al revés, hora después del último bus), el ejemplo de R10 del enunciado, la tabla hash y el AVL contra miles de operaciones al azar, y R5, R6 y R10 comparados contra una versión de fuerza bruta.
+`python3 correr_tests.py` corre 15 pruebas: casos borde de cada requisito (estación inexistente o cerrada, viaje imposible, deshacer sin nada que deshacer, k = 0, rango al revés, hora después del último bus), el ejemplo de R10 del enunciado, la tabla hash y el AVL contra miles de operaciones al azar, y R5, R6 y R10 comparados contra una versión de fuerza bruta.
