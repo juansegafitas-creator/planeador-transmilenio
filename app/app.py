@@ -1,5 +1,6 @@
 # Front del planeador. Solo llama al motor: aqui no hay ninguna regla del sistema.
 # Arranque: streamlit run app/app.py
+import math
 import sys
 from pathlib import Path
 
@@ -52,12 +53,12 @@ with tabs[0]:
 with tabs[1]:
     st.subheader("¿A qué hora pasa mi bus? (R4)")
     est = st.selectbox("Estación", todas, index=todas.index("PORTAL NORTE") if "PORTAL NORTE" in todas else 0)
-    rutas_est = red.rutas_por_estacion.get(est) or []
+    rutas_est = red.rutas_de(est)
     if not rutas_est:
         st.info("Ninguna ruta para en esta estación.")
     else:
         c1, c2 = st.columns(2)
-        ruta = c1.selectbox("Ruta", sorted(rutas_est))
+        ruta = c1.selectbox("Ruta", rutas_est)
         hora = c2.time_input("Hora", value=pd.Timestamp("07:00").time())
         res = red.proximo_bus(est, ruta, hora.strftime("%H:%M"))
         if res is None:
@@ -93,8 +94,7 @@ with tabs[3]:
 # ---------------- R7 y R9 ----------------
 with tabs[4]:
     st.subheader("Editar rutas (R7)")
-    todas_rutas = sorted({r for e in red.estaciones.claves() for r in (red.rutas_por_estacion.get(e) or [])})
-    ruta = st.selectbox("Ruta", todas_rutas)
+    ruta = st.selectbox("Ruta", red.lista_rutas())
     al_reves = st.toggle("Ver en sentido contrario")
     st.write(" → ".join(red.recorrido(ruta, al_reves)))
     c1, c2 = st.columns(2)
@@ -160,26 +160,68 @@ with tabs[7]:
                "(python3 panel/medir.py). La pendiente es la del tiempo contra n en escala logarítmica: "
                "0 = constante, 1 = lineal.")
     archivo = RAIZ / "panel" / "resultados.csv"
-    if not archivo.exists():
-        st.warning("Corre primero: python3 panel/medir.py")
-    else:
-        res = pd.read_csv(archivo)
+
+    def esperado(fila, n0, y0):
+        """Curva que esperabamos, anclada en la primera medicion de esa operacion."""
+        comp = fila["complejidad"]
+        if "n log n" in comp or "P log P" in comp:
+            return y0 * (fila["n"] * math.log(fila["n"])) / (n0 * math.log(n0))
+        return y0 * (fila["n"] / n0) ** fila["pendiente_esperada"]
+
+    def mostrar(res, titulo):
+        res = res.copy()
         res["microsegundos"] = res["segundos"] * 1e6
+        primeras = res.groupby("operacion", sort=False).first()
+        res["esperado_us"] = [esperado(f, primeras.loc[f["operacion"], "n"], primeras.loc[f["operacion"], "microsegundos"])
+                              for _, f in res.iterrows()]
         ops = list(dict.fromkeys(res["operacion"]))
-        elegidas = st.multiselect("Operaciones", ops, default=[o for o in ops if "carga" not in o and "fila" not in o])
+        elegidas = st.multiselect("Operaciones", ops, key="ops_" + titulo,
+                                  default=[o for o in ops if "carga" not in o and "fila" not in o])
         datos = res[res["operacion"].isin(elegidas)]
-        st.altair_chart(alt.Chart(datos).mark_line(point=True).encode(
-            x=alt.X("n:Q", scale=alt.Scale(type="log"), title="estaciones (n)"),
-            y=alt.Y("microsegundos:Q", scale=alt.Scale(type="log"), title="tiempo por operación (µs)"),
-            color="operacion:N", tooltip=["operacion", "n", "microsegundos"]), use_container_width=True)
-        tabla = res.groupby("operacion", sort=False).first()[["complejidad", "pendiente_esperada", "pendiente_medida"]]
+        eje_x = alt.X("n:Q", scale=alt.Scale(type="log"), title="estaciones (n)")
+        medido = alt.Chart(datos).mark_line(point=True).encode(
+            x=eje_x, y=alt.Y("microsegundos:Q", scale=alt.Scale(type="log"), title="tiempo por operación (µs)"),
+            color="operacion:N", tooltip=["operacion", "n", "microsegundos"])
+        teorico = alt.Chart(datos).mark_line(strokeDash=[6, 4], opacity=0.6).encode(
+            x=eje_x, y="esperado_us:Q", color="operacion:N")
+        st.altair_chart(medido + teorico, use_container_width=True)
+        st.caption("Línea continua: lo medido. Línea punteada: la complejidad que esperábamos, "
+                   "anclada en el primer tamaño.")
+        tabla = primeras[["complejidad", "pendiente_esperada", "pendiente_medida"]].copy()
         tabla["¿coincide?"] = (tabla["pendiente_medida"] - tabla["pendiente_esperada"]).abs().map(
             lambda x: "✅" if x < 0.35 else "⚠️")
         st.dataframe(tabla, use_container_width=True)
-        st.markdown(
-            "**Cómo leerlo.** Las consultas (R1, R2, R3, R4, R6) quedan planas: duplicar la red no cambia su "
-            "tiempo, como se espera de O(1) y O(log n). Cerrar, reabrir, editar y deshacer son O(log n): "
-            "suben muy poco. En 80.000 se ve un salto pequeño que no viene del algoritmo sino de la memoria: "
-            "el árbol y las tablas ya no caben en la caché del procesador y cada salto de puntero cuesta más. "
-            "La carga y la fila crecen un poco más que lineal (pendiente ~1.1-1.2), que es lo que da n log n "
-            "más el costo de crear millones de objetos en Python.")
+
+    if archivo.exists():
+        st.markdown("**Medición completa** (10.000 a 80.000 estaciones, `python3 panel/medir.py`)")
+        mostrar(pd.read_csv(archivo), "completa")
+    else:
+        st.warning("Todavía no hay medición completa: corre python3 panel/medir.py")
+
+    st.markdown("**Medir ahora** en redes pequeñas (1.000 a 8.000 estaciones) para ver la misma tendencia en vivo.")
+    if st.button("▶️ Medir ahora"):
+        sys.path.insert(0, str(RAIZ / "panel"))
+        import medir
+        tamanos = [1000, 2000, 4000, 8000]
+        resultados = {}
+        barra = st.progress(0.0, text="Generando redes y midiendo…")
+        for i, n in enumerate(tamanos):
+            resultados[n] = medir.medir_red(n)
+            barra.progress((i + 1) / len(tamanos), text=f"Listo n = {n}")
+        filas = []
+        for op, (comp, pend) in medir.ESPERADO.items():
+            ys = [resultados[n][op] for n in tamanos]
+            m = medir.pendiente(tamanos, ys)
+            for n, y in zip(tamanos, ys):
+                filas.append({"operacion": op, "complejidad": comp, "pendiente_esperada": pend,
+                              "n": n, "segundos": y, "pendiente_medida": round(m, 3)})
+        st.session_state["medicion_vivo"] = pd.DataFrame(filas)
+    if "medicion_vivo" in st.session_state:
+        mostrar(st.session_state["medicion_vivo"], "vivo")
+    st.markdown(
+        "**Cómo leerlo.** Las consultas (R1, R2, R3, R4, R6) quedan planas: duplicar la red no cambia su "
+        "tiempo, como se espera de O(1) y O(log n). Cerrar, reabrir, editar y deshacer son O(log n): "
+        "suben muy poco. En 80.000 se ve un salto pequeño que no viene del algoritmo sino de la memoria: "
+        "el árbol y las tablas ya no caben en la caché del procesador y cada salto de puntero cuesta más. "
+        "La carga y la fila crecen un poco más que lineal (pendiente ~1.1-1.2), que es lo que da n log n "
+        "más el costo de crear millones de objetos en Python.")
