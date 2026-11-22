@@ -12,7 +12,7 @@ Otros comandos:
 
 ```
 python3 demo.py              # prueba rápida de R1 a R10 en la terminal
-python3 correr_tests.py      # 14 pruebas, no necesita instalar nada
+python3 correr_tests.py      # 15 pruebas, no necesita instalar nada
 python3 panel/medir.py       # mide todo en redes de 10.000 a 80.000 estaciones (R11)
 ```
 
@@ -210,4 +210,4 @@ Cómo se lee: las consultas (R1, R2, R3, R4, R6) quedan planas al pasar de 10.00
 
 ## Pruebas
 
-`python3 correr_tests.py` corre 14 pruebas: casos borde de cada requisito (estación inexistente o cerrada, viaje imposible, deshacer sin nada que deshacer, k = 0, rango al revés, hora después del último bus), el ejemplo de R10 del enunciado, la tabla hash y el AVL contra miles de operaciones al azar, y R5, R6 y R10 comparados contra una versión de fuerza bruta.
+`python3 correr_tests.py` corre 15 pruebas: casos borde de cada requisito (estación inexistente o cerrada, viaje imposible, deshacer sin nada que deshacer, k = 0, rango al revés, hora después del último bus), el ejemplo de R10 del enunciado, la tabla hash y el AVL contra miles de operaciones al azar, y R5, R6 y R10 comparados contra una versión de fuerza bruta.

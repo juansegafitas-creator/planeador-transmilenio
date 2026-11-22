@@ -183,7 +183,7 @@ with tabs[7]:
             x=eje_x, y=alt.Y("microsegundos:Q", scale=alt.Scale(type="log"), title="tiempo por operación (µs)"),
             color="operacion:N", tooltip=["operacion", "n", "microsegundos"])
         teorico = alt.Chart(datos).mark_line(strokeDash=[6, 4], opacity=0.6).encode(
-            x=eje_x, y="esperado_us:Q", color="operacion:N")
+            x=eje_x, y=alt.Y("esperado_us:Q", scale=alt.Scale(type="log")), color="operacion:N")
         st.altair_chart(medido + teorico, use_container_width=True)
         st.caption("Línea continua: lo medido. Línea punteada: la complejidad que esperábamos, "
                    "anclada en el primer tamaño.")
