@@ -9,6 +9,7 @@ class Cola:
         self.datos = []
         self.frente = 0
 
+    
     def enqueue(self, x):
         self.datos.append(x)
 
