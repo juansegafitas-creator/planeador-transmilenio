@@ -325,6 +325,31 @@ class Red:
         self.por_deshacer.push(accion)
         return True
 
+    # ============ ayudas para los fronts (fuera del contrato) ============
+    # No hacen parte de R1-R10. Existen para que la app no tenga que leer
+    # atributos internos del motor ni repetir logica en el front.
+
+    def lista_rutas(self):
+        """Nombres de todas las rutas en orden alfabetico. O(R log R), R = rutas."""
+        return merge_sort(self.rutas.claves())
+
+    def rutas_de(self, estacion):
+        """Rutas que paran hoy en esa estacion, en orden alfabetico ([] si no existe).
+        O(1) para encontrarlas + O(r log r), r = rutas de la estacion."""
+        lista = self.rutas_por_estacion.get(estacion)
+        if lista is None:
+            return []
+        return merge_sort(lista)
+
+    def llegadas(self, ruta, hora):
+        """Para cada parada de la ruta, en orden: (estacion, hora del proximo bus o None).
+        Es proximo_bus aplicado a todo el recorrido; lo usa el mapa para ubicar
+        los buses. O(L log m), L = paradas de la ruta, m = buses por parada."""
+        salida = []
+        for estacion in self.recorrido(ruta):
+            salida.append((estacion, self.proximo_bus(estacion, ruta, hora)))
+        return salida
+
 
 # ============ acciones para deshacer / rehacer (R9) ============
 # Cada cambio sabe hacerse y deshacerse. Las pilas guardan estas acciones.

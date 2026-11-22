@@ -275,3 +275,16 @@ def test_red_real_viajes_y_ranking():
     cuenta = {n: red.estaciones.get(n).buses for n in abiertas}
     esperado = sorted(cuenta.items(), key=lambda x: (-x[1], x[0]))[:15]
     assert red.ranking(15) == esperado
+
+
+def test_metodos_para_el_front(tmp_path):
+    # lista_rutas, rutas_de y llegadas: apoyo para las apps, fuera del contrato
+    red = red_chiquita(tmp_path)
+    assert red.lista_rutas() == ["R1", "R2", "R3", "R4"]
+    assert red.rutas_de("A") == ["R1", "R3"]
+    assert red.rutas_de("C") == ["R1", "R2"]
+    assert red.rutas_de("NADA") == []
+    assert red.llegadas("R1", "06:01") == [("A", "06:10"), ("B", "06:05"), ("C", None), ("D", None)]
+    assert red.llegadas("NADA", "06:00") == []
+    red.quitar_parada("R1", "C")
+    assert red.rutas_de("C") == ["R2"]
